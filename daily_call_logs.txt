@@ -1,0 +1,2 @@
+[2025-12-16 11:39:35] ENQUIRY (SUCCESSFUL) | URL: https://cloudphone.tatateleservices.com/file/recording?callId=1764137606.321402&type=rec&token=ZkNLZEt4VS9DVkxPc1QvNU1IK203UkpMditmZGtrazdPaVVsb1hHY05jZmJqUG1iVWxHa3FsZlV2czZmTmEwUDo6YWIxMjM0Y2Q1NnJ0eXl1dQ%3D%3D
+[2025-12-16 11:41:21] SALE (UNSUCCESSFUL) | URL: https://cloudphone.tatateleservices.com/file/recording?callId=1764141077.697059&type=rec&token=dnlad1J0cEFHZkI0aUVBeFU4M1BKa0d5WlFIOENWYkNLTTlMVDdZTXVpOEsyQUVsVUY0YzBBMHJTaE0vUzREazo6YWIxMjM0Y2Q1NnJ0eXl1dQ%3D%3D

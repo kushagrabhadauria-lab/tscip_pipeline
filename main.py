@@ -4,7 +4,11 @@ import json
 import requests
 import google.generativeai as genai
 from dotenv import load_dotenv
-from prompts import ANALYSIS_SYSTEM_PROMPT, FEEDBACK_SYSTEM_PROMPT
+from prompts import (
+    ANALYSIS_SYSTEM_PROMPT, 
+    FEEDBACK_SUCCESS_PROMPT, 
+    FEEDBACK_FAILURE_PROMPT
+)
 
 # --- Configuration ---
 load_dotenv()
@@ -53,7 +57,7 @@ def upload_to_gemini(file_path):
     return audio_file
 
 def analyze_audio_data(audio_file):
-    """Phase 1: Get Data (Category, Scores, Sentences)"""
+    """Phase 1: Get Data (Type, Outcome, Scores, Sentences)"""
     print("[INFO] Analyzing Audio Structure...")
     try:
         response = model.generate_content(
@@ -65,10 +69,16 @@ def analyze_audio_data(audio_file):
         print(f"[ERROR] Analysis failed: {e}")
         return None
 
-def generate_coaching_feedback(audio_file, call_category):
-    """Phase 2: Generate Text Feedback based on Category"""
-    print(f"[INFO] Generating Feedback for category: {call_category}...")
-    formatted_prompt = FEEDBACK_SYSTEM_PROMPT.format(call_category=call_category)
+def generate_conditional_feedback(audio_file, call_type, call_outcome):
+    """Phase 2: Generate Feedback based on Success vs Failure"""
+    print(f"[INFO] Generating Feedback for: {call_type} ({call_outcome})...")
+    
+    if call_outcome == "SUCCESSFUL":
+        prompt_template = FEEDBACK_SUCCESS_PROMPT
+    else:
+        prompt_template = FEEDBACK_FAILURE_PROMPT
+        
+    formatted_prompt = prompt_template.format(call_type=call_type)
     
     try:
         response = model.generate_content([formatted_prompt, audio_file])
@@ -77,13 +87,13 @@ def generate_coaching_feedback(audio_file, call_category):
         print(f"[ERROR] Feedback generation failed: {e}")
         return "Feedback generation failed."
 
-def save_good_sentences(sentences):
-    """Only runs if Call Category == SALE"""
+def save_good_sentences(sentences, call_type):
+    """Only runs if Call was SUCCESSFUL (Enquiry OR Sale)"""
     if not sentences: return
     
-    print(f"[DB] Saving {len(sentences)} Winning Sentences to {MASTER_SENTENCES_FILE}...")
+    print(f"[DB] Saving {len(sentences)} Winning Sentences from {call_type} to {MASTER_SENTENCES_FILE}...")
     with open(MASTER_SENTENCES_FILE, "a", encoding="utf-8") as f:
-        f.write(f"\n--- WINNING SENTENCES (Timestamp: {int(time.time())}) ---\n")
+        f.write(f"\n--- WINNING PHRASES ({call_type}) - {int(time.time())} ---\n")
         for sent in sentences:
             f.write(f"» {sent}\n")
 
@@ -92,7 +102,8 @@ def append_to_logs(url, data, feedback_text):
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
     
     # Extract data safely
-    call_category = data.get("call_category", "UNKNOWN").upper()
+    call_type = data.get("call_type", "UNKNOWN").upper()
+    call_outcome = data.get("call_outcome", "UNKNOWN").upper()
     summary = data.get("transcript_summary", "No summary provided.")
     variables = data.get("variables_analysis", {})
     
@@ -108,7 +119,8 @@ def append_to_logs(url, data, feedback_text):
 CALL TIMESTAMP: {timestamp}
 URL: {url}
 --------------------------------------------------
-CALL TYPE: {call_category}
+CALL TYPE: {call_type}
+OUTCOME:   {call_outcome}
 --------------------------------------------------
 SUMMARY:
 {summary}
@@ -125,7 +137,7 @@ SCORES & NOTES:
         f.write(full_log_entry)
 
     # 2. Save Simple Running Log
-    simple_log = f"[{timestamp}] Type: {call_category} | URL: {url} | Score Avg: {variables.get('persuasion_score', 0)}\n"
+    simple_log = f"[{timestamp}] {call_type} ({call_outcome}) | URL: {url}\n"
     with open(DAILY_LOG_FILE, "a", encoding="utf-8") as f:
         f.write(simple_log)
 
@@ -146,23 +158,24 @@ def process_single_url(audio_url):
             data = analyze_audio_data(gemini_file)
             
             if data:
-                call_category = data.get("call_category", "ENQUIRY").upper()
+                call_type = data.get("call_type", "ENQUIRY").upper()
+                call_outcome = data.get("call_outcome", "UNSUCCESSFUL").upper()
                 golden_sentences = data.get("golden_sentences", [])
                 
-                print(f"\n[RESULT] Call Identified as: {call_category}")
+                print(f"\n[RESULT] Identified: {call_type} -> {call_outcome}")
 
-                # Step 2: Logic Branching
-                if call_category == "SALE":
-                    print("[ACTION] Sale Detected! Capturing Golden Sentences.")
-                    save_good_sentences(golden_sentences)
+                # Step 2: Logic Branching (Save Sentences ONLY if Successful)
+                if call_outcome == "SUCCESSFUL":
+                    print("[ACTION] Success Detected! Capturing Golden Sentences.")
+                    save_good_sentences(golden_sentences, call_type)
                 else:
-                    print("[ACTION] Enquiry/Non-Sale. Skipping Golden Sentences.")
+                    print("[ACTION] Outcome Unsuccessful. Skipping Golden Sentences.")
 
-                # Step 3: Generate Context-Aware Feedback
-                feedback_text = generate_coaching_feedback(gemini_file, call_category)
+                # Step 3: Generate Specific Feedback (Good only OR Good+Bad)
+                feedback_text = generate_conditional_feedback(gemini_file, call_type, call_outcome)
                 print("\n" + feedback_text)
 
-                # Step 4: Log Everything (Now includes Scores/Summary)
+                # Step 4: Log Everything
                 append_to_logs(audio_url, data, feedback_text)
                 print("[SUCCESS] Logs updated.")
 
@@ -180,6 +193,10 @@ def process_single_url(audio_url):
 
 if __name__ == "__main__":
     print("--- Intelligent Sales Call Analyzer ---")
+    print(f"1. Master Sentences -> {MASTER_SENTENCES_FILE}")
+    print(f"2. All Feedback     -> {FEEDBACK_LOG_FILE}")
+    print(f"3. Running Logs     -> {DAILY_LOG_FILE}")
+    
     while True:
         url_input = input("\nPaste Audio URL (or type 'exit'): ").strip()
         
